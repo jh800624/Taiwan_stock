@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -148,6 +147,17 @@ nav{height:48px;padding:0 18px;background:#fff;border-bottom:1px solid var(--bd)
 .tag-neut{background:var(--bg2);color:var(--tx2);border-color:var(--bd)}
 .sc-footer{font-size:11px;color:var(--tx3);margin-top:8px}
 .empty{text-align:center;padding:40px 20px;color:var(--tx3);font-size:13px}
+
+.fund-box{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;margin-bottom:14px;display:none}
+.fund-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--tx3);margin-bottom:12px}
+.fund-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:480px){.fund-grid{grid-template-columns:1fr}}
+.fund-item{background:#fff;border:1px solid var(--bd);border-radius:6px;padding:10px 12px}
+.fund-lbl{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.fund-val{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500;color:var(--tx)}
+.fund-sub{font-size:11px;color:var(--tx2);margin-top:2px}
+.fund-good{color:var(--bull)}.fund-bad{color:var(--bear)}.fund-mid{color:var(--warn)}
+.fund-loading{font-size:12px;color:var(--tx3);text-align:center;padding:16px 0}
 footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);line-height:1.8;border-top:1px solid var(--bd);max-width:860px;margin:0 auto}
 </style>
 </head>
@@ -166,7 +176,6 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
 </div>
 
 <!-- TAB 1 -->
-
 <div class="tab-content on" id="tab-single"><div class="wrap">
   <div class="search-card">
     <div class="search-row">
@@ -193,6 +202,10 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
     <div class="ohlc-row" id="hOHLC"></div>
     <div class="ma-row" id="hMA"></div>
   </div>
+  <div class="fund-box" id="fundBox">
+    <div class="fund-title">基本面概覽</div>
+    <div id="fundContent"><div class="fund-loading">載入基本面資料中…</div></div>
+  </div>
   <div class="chart-box" id="chartBox">
     <div class="chart-tabs">
       <button class="ctab on" onclick="switchChart('daily',this)">日K（近40根）</button>
@@ -212,7 +225,6 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
 </div></div>
 
 <!-- TAB 2 -->
-
 <div class="tab-content" id="tab-portfolio"><div class="wrap">
   <div class="batch-card">
     <textarea id="portfolioInput" placeholder="輸入持股代號，每行一個或逗號分隔：
@@ -234,7 +246,6 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
 </div></div>
 
 <!-- TAB 3 -->
-
 <div class="tab-content" id="tab-scanner"><div class="wrap">
   <div class="info-badge">内建 258 檔精選上市股票清單，不依賴 TWSE API</div>
   <div class="scanner-cfg">
@@ -397,6 +408,102 @@ function getAction(dr,wr){
 function showS(id,msg,cls){const el=document.getElementById(id);el.innerHTML=msg;el.className='status '+cls;el.style.display='block';}
 function hideS(id){document.getElementById(id).style.display='none';}
 
+
+// ── Yahoo Finance 基本面 ──
+async function fetchFundamentals(sym){
+  const modules='summaryDetail,defaultKeyStatistics,financialData,assetProfile';
+  const target=`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=${modules}`;
+  let lastErr;
+  for(const mkP of PROXIES){
+    try{
+      const res=await fetch(mkP(target),{signal:AbortSignal.timeout(12000)});
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const txt=await res.text();
+      if(!txt||!txt.trim())throw new Error('empty');
+      const j=JSON.parse(txt);
+      return j?.quoteSummary?.result?.[0]||null;
+    }catch(e){lastErr=e;}
+  }
+  return null;
+}
+
+function fmtNum(v,decimals=2){if(v==null||isNaN(v))return '—';return parseFloat(v).toFixed(decimals);}
+function fmtPct(v){if(v==null||isNaN(v))return '—';const p=(v*100).toFixed(1);return (v>=0?'+':'')+p+'%';}
+function fmtBillion(v){if(v==null||isNaN(v))return '—';if(v>=1e12)return (v/1e12).toFixed(2)+'兆';if(v>=1e8)return (v/1e8).toFixed(1)+'億';if(v>=1e6)return (v/1e6).toFixed(1)+'百萬';return v.toLocaleString();}
+
+function renderFundamentals(data,sym){
+  const fb=document.getElementById('fundBox');
+  if(!data){fb.style.display='block';document.getElementById('fundContent').innerHTML='<div class="fund-loading">無法取得基本面資料</div>';return;}
+  const sd=data.summaryDetail||{},ks=data.defaultKeyStatistics||{},fd=data.financialData||{},ap=data.assetProfile||{};
+
+  const raw=(obj,key)=>obj[key]?.raw??obj[key];
+  const fmt=(obj,key,dec=2)=>fmtNum(raw(obj,key),dec);
+  const fmtP=(obj,key)=>fmtPct(raw(obj,key));
+
+  const pe=raw(sd,'trailingPE');
+  const pb=raw(ks,'priceToBook');
+  const dy=raw(sd,'dividendYield');
+  const eps=raw(ks,'trailingEps');
+  const roe=raw(fd,'returnOnEquity');
+  const roa=raw(fd,'returnOnAssets');
+  const margin=raw(fd,'grossMargins');
+  const profitMargin=raw(fd,'profitMargins');
+  const debtEquity=raw(fd,'debtToEquity');
+  const currentRatio=raw(fd,'currentRatio');
+  const revenueGrowth=raw(fd,'revenueGrowth');
+  const earningsGrowth=raw(fd,'earningsGrowth');
+  const mktCap=raw(sd,'marketCap');
+  const fiftyTwoHigh=raw(sd,'fiftyTwoWeekHigh');
+  const fiftyTwoLow=raw(sd,'fiftyTwoWeekLow');
+  const beta=raw(sd,'beta');
+  const sharesShort=raw(ks,'sharesShortPriorMonth');
+  const shortRatio=raw(ks,'shortRatio');
+  const forwardPE=raw(sd,'forwardPE');
+  const evToEbitda=raw(ks,'enterpriseToEbitda');
+  const sector=ap.sector||'';
+  const industry=ap.industry||'';
+
+  // 評級邏輯
+  function peClass(v){if(!v)return'';if(v<15)return'fund-good';if(v<25)return'fund-mid';return'fund-bad';}
+  function pbClass(v){if(!v)return'';if(v<1.5)return'fund-good';if(v<3)return'fund-mid';return'fund-bad';}
+  function dyClass(v){if(!v)return'';if(v>0.05)return'fund-good';if(v>0.02)return'fund-mid';return'';}
+  function roeClass(v){if(!v)return'';if(v>0.15)return'fund-good';if(v>0.08)return'fund-mid';return'fund-bad';}
+  function marginClass(v){if(!v)return'';if(v>0.3)return'fund-good';if(v>0.15)return'fund-mid';return'fund-bad';}
+  function growthClass(v){if(!v)return'';if(v>0.1)return'fund-good';if(v>0)return'fund-mid';return'fund-bad';}
+  function debtClass(v){if(!v)return'';if(v<50)return'fund-good';if(v<100)return'fund-mid';return'fund-bad';}
+
+  const items=[
+    {l:'產業',v:sector&&industry?`${sector}<br><span style="font-size:11px;color:var(--tx2)">${industry}</span>`:(sector||industry||'—'),raw:true},
+    {l:'市值',v:fmtBillion(mktCap)},
+    {l:'本益比 (P/E)',v:pe?fmtNum(pe,1):'—',cls:peClass(pe),sub:forwardPE?`預測 P/E ${fmtNum(forwardPE,1)}`:''},
+    {l:'股價淨值比 (P/B)',v:pb?fmtNum(pb,2):'—',cls:pbClass(pb)},
+    {l:'殖利率',v:dy?fmtPct(dy):'—',cls:dyClass(dy)},
+    {l:'EPS（近四季）',v:eps?fmtNum(eps,2):'—'},
+    {l:'毛利率',v:margin?fmtPct(margin):'—',cls:marginClass(margin)},
+    {l:'淨利率',v:profitMargin?fmtPct(profitMargin):'—',cls:marginClass(profitMargin)},
+    {l:'ROE（股東權益報酬率）',v:roe?fmtPct(roe):'—',cls:roeClass(roe)},
+    {l:'ROA（資產報酬率）',v:roa?fmtPct(roa):'—',cls:roeClass(roa)},
+    {l:'負債/股東權益比',v:debtEquity?fmtNum(debtEquity,1)+'%':'—',cls:debtClass(debtEquity)},
+    {l:'流動比率',v:currentRatio?fmtNum(currentRatio,2):'—',cls:currentRatio>2?'fund-good':currentRatio>1?'fund-mid':'fund-bad'},
+    {l:'營收成長率（YoY）',v:revenueGrowth!=null?fmtPct(revenueGrowth):'—',cls:growthClass(revenueGrowth)},
+    {l:'獲利成長率（YoY）',v:earningsGrowth!=null?fmtPct(earningsGrowth):'—',cls:growthClass(earningsGrowth)},
+    {l:'52週高點',v:fiftyTwoHigh?fmtNum(fiftyTwoHigh,2):'—'},
+    {l:'52週低點',v:fiftyTwoLow?fmtNum(fiftyTwoLow,2):'—'},
+    {l:'Beta（波動係數）',v:beta?fmtNum(beta,2):'—',sub:beta?beta<0.8?'低波動':beta<1.2?'接近大盤':'高波動':''},
+    {l:'EV/EBITDA',v:evToEbitda?fmtNum(evToEbitda,1):'—',cls:evToEbitda?evToEbitda<10?'fund-good':evToEbitda<20?'fund-mid':'fund-bad':''},
+  ];
+
+  const html=`<div class="fund-grid">${items.map(item=>`
+    <div class="fund-item">
+      <div class="fund-lbl">${item.l}</div>
+      <div class="fund-val ${item.cls||''}">${item.raw?item.v:(item.v||'—')}</div>
+      ${item.sub?`<div class="fund-sub">${item.sub}</div>`:''}
+    </div>`).join('')}</div>`;
+
+  document.getElementById('fundContent').innerHTML=html;
+  fb.style.display='block';
+}
+
 // ── TAB1 ──
 let chartInst=null,gD=[],gW=[],cMode='daily';
 function fillS(s){document.getElementById('sym').value=s;}
@@ -408,7 +515,7 @@ async function runSingle(){
   raw=normalize(raw);
   const btn=document.getElementById('goBtn');
   btn.disabled=true;document.getElementById('sp').style.display='block';document.getElementById('btnTxt').textContent='載入中';
-  ['hero','chartBox','dual'].forEach(id=>document.getElementById(id).style.display='none');
+  ['hero','chartBox','dual','fundBox'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('compare').style.display='none';
   showS('s1','連線至Yahoo Finance…','s-load');
   try{
@@ -424,6 +531,7 @@ async function runSingle(){
     document.getElementById('compare').style.display='flex';
     document.getElementById('dual').style.display='grid';
     showS('s1',`成功載入${gD.length}筆日K、${gW.length}根週K`,'s-ok');
+    fetchFundamentals(raw).then(d=>renderFundamentals(d,raw));
     setTimeout(()=>hideS('s1'),3000);
   }catch(e){showS('s1','錯誤：'+e.message,'s-err');}
   finally{btn.disabled=false;document.getElementById('sp').style.display='none';document.getElementById('btnTxt').textContent='分析';}
@@ -604,6 +712,5 @@ function jumpTo(code){
   runSingle();
 }
 </script>
-
 </body>
 </html>
