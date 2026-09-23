@@ -23,7 +23,7 @@ jobs:
         run: python3 scripts/fetch_market_universe.py
       - name: Publish changed snapshot
         run: |
-          if git diff --quiet -- data/market-universe.json; then
+          if [ -z "$(git status --porcelain -- data/market-universe.json)" ]; then
             echo "No market-data change to publish."
             exit 0
           fi
