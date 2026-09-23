@@ -247,7 +247,7 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
 
 <!-- TAB 3 -->
 <div class="tab-content" id="tab-scanner"><div class="wrap">
-  <div class="info-badge">内建 258 檔精選上市股票清單，不依賴 TWSE API</div>
+  <div class="info-badge">預設從 TWSE／TPEx 取得最近交易日全市場行情，再挑出流動性最高的候選</div>
   <div class="scanner-cfg">
     <div class="cfg-title">掃描條件設定</div>
     <div class="cfg-grid">
@@ -258,6 +258,12 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
           <option value="both">多空都掃</option>
         </select>
       </div>
+      <div class="cfg-item"><label>候選池來源</label>
+        <select id="universeSource">
+          <option value="online" selected>線上全市場（依成交額挑選）</option>
+          <option value="builtin">內建精選清單（網路備援）</option>
+        </select>
+      </div>
       <div class="cfg-item"><label>最低成交量（張/日）</label>
         <input type="number" id="minVol" value="3000" min="0" step="500"/>
       </div>
@@ -266,6 +272,14 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
       </div>
       <div class="cfg-item"><label>股價最高（元）</label>
         <input type="number" id="maxPrice" value="2000" min="0"/>
+      </div>
+      <div class="cfg-item"><label>標的排除</label>
+        <select id="assetFilter">
+          <option value="all">不排除（含 ETF／債券）</option>
+          <option value="no-etf" selected>略過所有 ETF／ETN</option>
+          <option value="no-bond">略過債券／公債 ETF</option>
+          <option value="stocks-only">只掃個股（略過 ETF／ETN／債券）</option>
+        </select>
       </div>
       <div class="cfg-item"><label>最低多方分數門檻</label>
         <select id="minScore">
@@ -309,6 +323,54 @@ footer{text-align:center;padding:16px 16px 28px;font-size:11px;color:var(--tx3);
 
 <script>
 const ALL_STOCKS=[["0050","元大台灣50"],["0056","元大高股息"],["00878","國泰永續高股息"],["006208","富邦台50"],["00692","富邦公司治理"],["00919","群益台灣精選高息"],["00929","復華台灣科技優息"],["00713","元大台灣高息低波"],["00900","富邦特選高股息30"],["00881","國泰台灣5G+"],["0051","元大中型100"],["0052","富邦科技"],["0053","元大電子"],["2330","台積電"],["2303","聯電"],["2454","聯發科"],["3711","日月光投控"],["2379","瑞昱"],["2344","華邦電"],["2337","旺宏"],["3034","聯詠"],["2408","南亞科"],["6770","力積電"],["3443","創意"],["6488","環球晶"],["2449","京元電子"],["3264","欣銓"],["3016","嘉晶"],["2455","全新"],["4919","新唐"],["6415","矽力-KY"],["3374","精材"],["5347","世界先進"],["3533","嘉澤"],["2356","英業達"],["4967","十銓"],["6271","同欣電"],["3042","晶技"],["3105","穩懋"],["3383","元太"],["6669","緯穎"],["2385","群光"],["3406","玉晶光"],["6531","愛普"],["3714","富采"],["2368","金像電"],["2451","創見"],["3413","京鼎"],["5269","祥碩"],["3697","晨星半導體"],["6460","神盾"],["4968","立積電子"],["6451","訊連"],["2317","鴻海"],["2382","廣達"],["2357","華碩"],["2308","台達電"],["2353","宏碁"],["2324","仁寶"],["2301","光寶科"],["3231","緯創"],["2347","聯強"],["2360","致茂"],["2376","技嘉"],["2377","微星"],["2312","金寶"],["3017","奇鋐"],["2395","研華"],["2392","正崴"],["2474","可成"],["2352","佳世達"],["4938","和碩"],["3702","大聯大"],["2313","華通"],["2345","智邦"],["3037","欣興"],["2383","台光電"],["3044","健鼎"],["4958","臻鼎-KY"],["3008","大立光"],["2388","威盛"],["6176","瑞儀"],["2439","美律"],["3665","貿聯-KY"],["2498","宏達電"],["3026","禾伸堂"],["2458","義隆電子"],["6214","精誠"],["3002","一銓"],["2881","富邦金"],["2882","國泰金"],["2884","玉山金"],["2886","兆豐金"],["2887","台新金"],["2891","中信金"],["2892","第一金"],["5880","合庫金"],["2880","華南金"],["2883","開發金"],["2885","元大金"],["2890","永豐金"],["2888","新光金"],["5876","上海商銀"],["2801","彰銀"],["2834","臺企銀"],["2812","台中銀"],["2820","華票"],["2823","中壽"],["2867","三商壽"],["2897","王道銀行"],["5820","日盛金"],["2809","京城銀"],["1301","台塑"],["1303","南亞"],["1326","台化"],["6505","台塑化"],["2002","中鋼"],["1101","台泥"],["1102","亞泥"],["1216","統一"],["1402","遠東新"],["1304","台聚"],["1313","聯成"],["1710","東聯"],["1717","長興"],["1722","台肥"],["1723","中碳"],["2006","東和鋼鐵"],["2014","中鴻"],["2015","豐興"],["1605","華新"],["1514","亞力"],["1590","亞德客"],["1595","川湖"],["1536","和大"],["9904","寶成"],["9914","美利達"],["9921","巨大"],["1234","黑松"],["1227","佳格"],["1229","聯華"],["1702","南僑"],["2207","和泰車"],["2201","裕隆"],["2204","中華"],["2206","三陽工業"],["1513","中興電"],["1537","廣隆"],["2231","為升"],["1583","程泰"],["1560","中砂"],["1598","岱宇"],["2233","宇隆"],["1519","華城"],["2409","友達"],["3481","群創"],["3673","TPK-KY"],["6116","彩晶"],["2354","鴻準"],["3514","昱晶"],["4107","邦特"],["4162","智擎"],["4174","浩鼎"],["1795","美時"],["1760","寶齊來"],["4144","喜康"],["4164","友華"],["1720","生達"],["4142","國光生"],["1752","南光"],["4105","東洋"],["1762","中化生"],["2603","長榮"],["2609","陽明"],["2615","萬海"],["2637","慧洋-KY"],["2617","台航"],["2616","山隆"],["2606","裕民"],["2612","中航"],["2605","新興"],["2610","華航"],["2618","長榮航"],["2504","國產"],["2524","京城建設"],["2520","冠德"],["2547","日勝生"],["2548","華固"],["5533","愛山林"],["2515","中工"],["2535","達欣工"],["2912","統一超"],["2903","遠百"],["5904","寶雅"],["5903","全家"],["2707","晶華"],["2723","美食-KY"],["2731","雄獅"],["2412","中華電"],["4904","遠傳"],["3045","台灣大"],["3293","鈊象"],["6409","旭隼"],["6414","樺漢"],["3706","神達"],["3388","崇越"],["6203","海韻電子"],["8069","元太"],["3698","隆達"],["6206","飛捷"],["3323","加百裕"],["3324","雙鴻"],["3680","家登"],["3653","健策"],["6239","力成"],["3576","聯合再生"],["2486","一詮"],["3526","凡甲"],["3311","閎康"],["3556","禾瑞亞"],["6277","宏遠興業"],["6286","立錡"],["6278","台表科"],["5371","中光電"],["3036","文曄"],["3005","神基"],["6202","盛群半導體"],["4953","緯軟"],["6279","胡連精密"],["8086","宏正自動科技"],["4915","致伸"],["3622","洋華"],["6147","頎邦"],["3121","鉅邁"],["2327","國巨"],["1615","大同"],["2393","億光"],["4906","正文"],["9941","裕融"],["9922","KMC"],["9939","宏全"],["9940","信義"],["2915","潤泰全"],["2919","潤泰新"],["9945","潤泰創新"],["8096","正峰新能源"],["4596","保瑞"],["3337","上銀"],["2059","川湖科技"],["6548","峰安車業"],["1434","福懋"],["2029","盛餘"],["2023","燁輝"],["2027","大成鋼"],["1604","聲寶"],["9924","福興"],["9931","台高金"],["2049","上銀科技"]];
+
+// 台股 ETF 名稱不一定含「ETF」，所以同時使用內建清單代號與名稱關鍵字判斷。
+const ETF_CODES=new Set(['0050','0051','0052','0053','0056','00692','00713','00878','00900','00919','00929','006208','00881']);
+function classifyAsset(code,name=''){
+  const label=`${code} ${name}`;
+  const isBond=/公債|國債|公司債|金融債|債券|美債|投等債|非投等債|高收債|收益債/.test(label);
+  // 集中市場 ETF 多為 00 開頭（新制商品可能含英文字尾），ETN 為 02 開頭。
+  const isEtf=ETF_CODES.has(code)||/^00/.test(code)||/^02/.test(code)||/ETF|ETN|指數|高股息|台灣50|台50|中型100|公司治理|高息低波|台灣5G/.test(label);
+  const isCommonStock=/^[1-9]\d{3}$/.test(code);
+  return {isEtf,isBond,isCommonStock};
+}
+function shouldScanAsset(assetFilter,code,name){
+  const {isEtf,isBond,isCommonStock}=classifyAsset(code,name);
+  if(assetFilter==='no-etf')return !isEtf;
+  if(assetFilter==='no-bond')return !isBond;
+  if(assetFilter==='stocks-only')return isCommonStock&&!isEtf&&!isBond;
+  return true;
+}
+function cleanNumber(value){return Number(String(value??'').replace(/[,$\s]/g,''))||0;}
+function valueOf(row,...keys){for(const key of keys){if(row[key]!=null&&row[key]!=='')return row[key];}return '';}
+async function fetchJsonThroughProxies(url){
+  let lastErr;
+  for(const mkP of PROXIES){
+    try{
+      const res=await fetch(mkP(url),{signal:AbortSignal.timeout(16000)});
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const data=JSON.parse(await res.text());
+      if(!Array.isArray(data))throw new Error('資料格式不符');
+      return data;
+    }catch(e){lastErr=e;}
+  }
+  throw new Error(lastErr?.message||'無法取得資料');
+}
+async function fetchOnlineUniverse(){
+  const twseUrl='https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
+  const tpexUrl='https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
+  const [twse,tpex]=await Promise.all([fetchJsonThroughProxies(twseUrl),fetchJsonThroughProxies(tpexUrl)]);
+  const parseRows=(rows,market)=>rows.map(row=>{
+    const code=String(valueOf(row,'Code','證券代號','SecuritiesCompanyCode')).trim();
+    const name=String(valueOf(row,'Name','證券名稱','CompanyName','SecuritiesCompanyName')).trim();
+    const close=cleanNumber(valueOf(row,'ClosingPrice','收盤價','Close'));
+    const volume=cleanNumber(valueOf(row,'TradeVolume','成交股數','TradingShares'));
+    const turnover=cleanNumber(valueOf(row,'TradeValue','成交金額','TradingValue','TransactionAmount'));
+    return {code,name,market,close,volume,turnover};
+  }).filter(row=>row.code&&row.name&&row.close>0&&row.volume>0);
+  // 標的類型會由使用者的「標的排除」設定決定，不把資料來源的商品先行寫死。
+  return [...parseRows(twse,'TW'),...parseRows(tpex,'TWO')];
+}
 
 (function tick(){const d=new Date();document.getElementById('clock').textContent=d.toLocaleDateString('zh-TW')+' '+d.toTimeString().slice(0,5);setTimeout(tick,30000);})();
 function switchTab(id,el){document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('on'));document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));document.getElementById('tab-'+id).classList.add('on');el.classList.add('on');}
@@ -586,8 +648,8 @@ async function batchAnalyze(syms,progressId,barId,lblId,detId){
   const results=[];
   for(let i=0;i<syms.length;i++){
     if(stopped)break;
-    const[code,name]=syms[i];
-    const sym=code+'.TW';
+    const[code,name,market='TW']=syms[i];
+    const sym=code+'.'+market;
     const pct=Math.round(i/syms.length*100);
     document.getElementById(barId).style.width=pct+'%';
     document.getElementById(lblId).textContent=`分析 ${code} ${name}… (${i+1}/${syms.length})`;
@@ -643,10 +705,37 @@ async function runScanner(){
   const minVol=parseInt(document.getElementById('minVol').value)||0;
   const minPrice=parseFloat(document.getElementById('minPrice').value)||0;
   const maxPrice=parseFloat(document.getElementById('maxPrice').value)||99999;
+  const assetFilter=document.getElementById('assetFilter').value;
+  const universeSource=document.getElementById('universeSource').value;
   const minScore=parseInt(document.getElementById('minScore').value)||6;
   const maxScan=parseInt(document.getElementById('maxScan').value)||100;
 
-  const toScan=ALL_STOCKS.slice(0,maxScan);
+  let universe;
+  try{
+    document.getElementById('sLbl').textContent=universeSource==='online'?'下載最近交易日全市場行情…':'讀取內建精選清單…';
+    universe=universeSource==='online'
+      ?await fetchOnlineUniverse()
+      :ALL_STOCKS.map(([code,name])=>({code,name,market:'TW',close:0,volume:0,turnover:0}));
+  }catch(e){
+    btn.disabled=false;document.getElementById('sSp').style.display='none';document.getElementById('sTxt').textContent='開始掃描';
+    document.getElementById('sProg').style.display='none';
+    showS('s3',`無法取得線上市場清單：${e.message}。可改用「內建精選清單」。`,'s-err');
+    return;
+  }
+  // 在線上全市場模式先以當日價格、成交量與成交額預篩，再取最高流動性的 N 檔抓歷史 K 線。
+  const tradable=universe.filter(row=>
+    shouldScanAsset(assetFilter,row.code,row.name) &&
+    (universeSource==='builtin'||(row.close>=minPrice&&row.close<=maxPrice&&row.volume>=minVol*1000))
+  );
+  const skipped=universe.length-tradable.length;
+  const toScan=tradable.sort((a,b)=>b.turnover-a.turnover).slice(0,maxScan).map(row=>[row.code,row.name,row.market]);
+  if(!toScan.length){
+    btn.disabled=false;document.getElementById('sSp').style.display='none';document.getElementById('sTxt').textContent='開始掃描';
+    document.getElementById('sProg').style.display='none';
+    showS('s3','目前的標的排除條件沒有可掃描的項目','s-err');
+    return;
+  }
+  document.getElementById('sDet').textContent=`候選池 ${universe.length} 檔，依流動性選出 ${toScan.length} 檔`;
   const results=await batchAnalyze(toScan,'sProg','sBar','sLbl','sDet');
 
   // 過濾條件
@@ -661,7 +750,7 @@ async function runScanner(){
   scanBear.sort((a,b)=>b.score.bear-a.score.bear);
 
   document.getElementById('sBar').style.width='100%';
-  document.getElementById('sLbl').textContent=`完成！多方候選${scanBull.length}檔，空方候選${scanBear.length}檔`;
+  document.getElementById('sLbl').textContent=`完成！多方候選${scanBull.length}檔，空方候選${scanBear.length}檔${skipped?`（已略過${skipped}檔）`:''}`;
   setTimeout(()=>{document.getElementById('sProg').style.display='none';},3000);
   btn.disabled=false;document.getElementById('sSp').style.display='none';document.getElementById('sTxt').textContent='開始掃描';
 
@@ -670,7 +759,7 @@ async function runScanner(){
   document.getElementById('dBull').textContent=`多方候選 (${scanBull.length})`;
   document.getElementById('dBear').textContent=`空方候選 (${scanBear.length})`;
   document.getElementById('scanWrap').style.display='block';
-  showS('s3',`掃描完成：多方${scanBull.length}檔，空方${scanBear.length}檔`,'s-ok');
+  showS('s3',`掃描完成：多方${scanBull.length}檔，空方${scanBear.length}檔；實際掃描${toScan.length}檔${skipped?`，已略過${skipped}檔` : ''}`,'s-ok');
   setTimeout(()=>hideS('s3'),5000);
 }
 
