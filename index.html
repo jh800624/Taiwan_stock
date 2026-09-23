@@ -344,22 +344,35 @@ function shouldScanAsset(assetFilter,code,name){
 function cleanNumber(value){return Number(String(value??'').replace(/[,$\s]/g,''))||0;}
 function valueOf(row,...keys){for(const key of keys){if(row[key]!=null&&row[key]!=='')return row[key];}return '';}
 async function fetchJsonThroughProxies(url){
+  // TWSE／TPEx 的 OpenAPI 本身通常可跨網域讀取；先直連，避免把每次掃描
+  // 都建立在不穩定的公開 proxy 上。若使用者網路仍擋住官方站，再逐一備援。
   let lastErr;
-  for(const mkP of PROXIES){
+  const sources=[u=>u,...PROXIES];
+  for(const mkP of sources){
     try{
-      const res=await fetch(mkP(url),{signal:AbortSignal.timeout(16000)});
+      const res=await fetch(mkP(url),{signal:AbortSignal.timeout(10000),headers:{Accept:'application/json'}});
       if(!res.ok)throw new Error('HTTP '+res.status);
-      const data=JSON.parse(await res.text());
+      const text=await res.text();
+      if(!text.trim())throw new Error('回傳空白資料');
+      const data=JSON.parse(text);
       if(!Array.isArray(data))throw new Error('資料格式不符');
       return data;
     }catch(e){lastErr=e;}
   }
-  throw new Error(lastErr?.message||'無法取得資料');
+  throw new Error(lastErr?.name==='TimeoutError'?'連線逾時':(lastErr?.message||'無法取得資料'));
 }
 async function fetchOnlineUniverse(){
   const twseUrl='https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
   const tpexUrl='https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes';
-  const [twse,tpex]=await Promise.all([fetchJsonThroughProxies(twseUrl),fetchJsonThroughProxies(tpexUrl)]);
+  // 其中一個市場暫時不可用時仍可掃描另一個市場，別讓單一端點中斷整個功能。
+  const [twseResult,tpexResult]=await Promise.allSettled([
+    fetchJsonThroughProxies(twseUrl),fetchJsonThroughProxies(tpexUrl)
+  ]);
+  if(twseResult.status==='rejected'&&tpexResult.status==='rejected'){
+    throw new Error(`TWSE：${twseResult.reason?.message||'失敗'}；TPEx：${tpexResult.reason?.message||'失敗'}`);
+  }
+  const twse=twseResult.status==='fulfilled'?twseResult.value:[];
+  const tpex=tpexResult.status==='fulfilled'?tpexResult.value:[];
   const parseRows=(rows,market)=>rows.map(row=>{
     const code=String(valueOf(row,'Code','證券代號','SecuritiesCompanyCode')).trim();
     const name=String(valueOf(row,'Name','證券名稱','CompanyName','SecuritiesCompanyName')).trim();
@@ -369,7 +382,11 @@ async function fetchOnlineUniverse(){
     return {code,name,market,close,volume,turnover};
   }).filter(row=>row.code&&row.name&&row.close>0&&row.volume>0);
   // 標的類型會由使用者的「標的排除」設定決定，不把資料來源的商品先行寫死。
-  return [...parseRows(twse,'TW'),...parseRows(tpex,'TWO')];
+  const unavailable=[
+    twseResult.status==='rejected'?'TWSE':null,
+    tpexResult.status==='rejected'?'TPEx':null
+  ].filter(Boolean);
+  return {rows:[...parseRows(twse,'TW'),...parseRows(tpex,'TWO')],unavailable};
 }
 
 (function tick(){const d=new Date();document.getElementById('clock').textContent=d.toLocaleDateString('zh-TW')+' '+d.toTimeString().slice(0,5);setTimeout(tick,30000);})();
@@ -706,21 +723,27 @@ async function runScanner(){
   const minPrice=parseFloat(document.getElementById('minPrice').value)||0;
   const maxPrice=parseFloat(document.getElementById('maxPrice').value)||99999;
   const assetFilter=document.getElementById('assetFilter').value;
-  const universeSource=document.getElementById('universeSource').value;
+  let universeSource=document.getElementById('universeSource').value;
   const minScore=parseInt(document.getElementById('minScore').value)||6;
   const maxScan=parseInt(document.getElementById('maxScan').value)||100;
 
-  let universe;
+  let universe,onlineUnavailable=[];
   try{
     document.getElementById('sLbl').textContent=universeSource==='online'?'下載最近交易日全市場行情…':'讀取內建精選清單…';
-    universe=universeSource==='online'
-      ?await fetchOnlineUniverse()
-      :ALL_STOCKS.map(([code,name])=>({code,name,market:'TW',close:0,volume:0,turnover:0}));
+    if(universeSource==='online'){
+      const online=await fetchOnlineUniverse();
+      universe=online.rows;
+      onlineUnavailable=online.unavailable;
+    }else{
+      universe=ALL_STOCKS.map(([code,name])=>({code,name,market:'TW',close:0,volume:0,turnover:0}));
+    }
   }catch(e){
-    btn.disabled=false;document.getElementById('sSp').style.display='none';document.getElementById('sTxt').textContent='開始掃描';
-    document.getElementById('sProg').style.display='none';
-    showS('s3',`無法取得線上市場清單：${e.message}。可改用「內建精選清單」。`,'s-err');
-    return;
+    // 全部市場端點暫時失敗時，仍執行本機清單掃描；使用者不必重設條件再按一次。
+    universe=ALL_STOCKS.map(([code,name])=>({code,name,market:'TW',close:0,volume:0,turnover:0}));
+    onlineUnavailable=['TWSE','TPEx'];
+    universeSource='builtin';
+    document.getElementById('sLbl').textContent='線上市場暫時不可用，改用內建精選清單…';
+    showS('s3',`線上市場清單暫時無法取得（${e.message}），已自動改用內建精選清單繼續掃描。`,'s-err');
   }
   // 在線上全市場模式先以當日價格、成交量與成交額預篩，再取最高流動性的 N 檔抓歷史 K 線。
   const tradable=universe.filter(row=>
@@ -735,7 +758,8 @@ async function runScanner(){
     showS('s3','目前的標的排除條件沒有可掃描的項目','s-err');
     return;
   }
-  document.getElementById('sDet').textContent=`候選池 ${universe.length} 檔，依流動性選出 ${toScan.length} 檔`;
+  const marketNote=onlineUnavailable.length?`；${onlineUnavailable.join('／')} 暫時不可用`:'';
+  document.getElementById('sDet').textContent=`候選池 ${universe.length} 檔，依流動性選出 ${toScan.length} 檔${marketNote}`;
   const results=await batchAnalyze(toScan,'sProg','sBar','sLbl','sDet');
 
   // 過濾條件
@@ -759,7 +783,7 @@ async function runScanner(){
   document.getElementById('dBull').textContent=`多方候選 (${scanBull.length})`;
   document.getElementById('dBear').textContent=`空方候選 (${scanBear.length})`;
   document.getElementById('scanWrap').style.display='block';
-  showS('s3',`掃描完成：多方${scanBull.length}檔，空方${scanBear.length}檔；實際掃描${toScan.length}檔${skipped?`，已略過${skipped}檔` : ''}`,'s-ok');
+  showS('s3',`掃描完成：多方${scanBull.length}檔，空方${scanBear.length}檔；實際掃描${toScan.length}檔${skipped?`，已略過${skipped}檔` : ''}${onlineUnavailable.length?`（${onlineUnavailable.join('／')} 資料暫不可用）`:''}`,'s-ok');
   setTimeout(()=>hideS('s3'),5000);
 }
 
